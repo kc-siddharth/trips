@@ -29,6 +29,7 @@
     settleView: "couple",                       // "couple" | "person"
     actions: [],
     editingActionId: null,
+    itinerary: null,   // set from the sheet when the backend is connected
   };
 
   // --- money helpers ---------------------------------------------------------
@@ -66,12 +67,16 @@
 
   function renderItinerary() {
     const wrap = $("#itineraryList");
-    C.itinerary.forEach((d) => {
+    wrap.innerHTML = "";
+    const list = (STATE.itinerary && STATE.itinerary.length) ? STATE.itinerary : C.itinerary;
+    list.forEach((d) => {
+      const day = d.day === "" || d.day == null ? "" : `Day ${Number(d.day) || d.day}`;
+      const dow = (d.dow || "").slice(0, 3);
       const card = el("div", "itin-card");
-      card.appendChild(el("div", "itin-day", `Day ${d.day}<span>${d.dow} ${d.date}</span>`));
+      card.appendChild(el("div", "itin-day", `${day}<span>${escapeHtml((dow + " " + (d.date || "")).trim())}</span>`));
       const body = el("div", "itin-body");
-      body.appendChild(el("div", "itin-city", d.city + (d.travel ? ` <span class="itin-travel">${d.travel}</span>` : "")));
-      body.appendChild(el("div", "itin-plan", d.plan));
+      body.appendChild(el("div", "itin-city", escapeHtml(d.city) + (d.travel ? ` <span class="itin-travel">${escapeHtml(d.travel)}</span>` : "")));
+      body.appendChild(el("div", "itin-plan", escapeHtml(d.plan)));
       card.appendChild(body);
       wrap.appendChild(card);
     });
@@ -582,6 +587,7 @@
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || "list failed");
         if (data.rates) { STATE.gbpEur = data.rates.gbpEur || STATE.gbpEur; STATE.eurInr = data.rates.eurInr || STATE.eurInr; }
+        if (Array.isArray(data.itinerary) && data.itinerary.length) STATE.itinerary = data.itinerary;
         STATE.expenses = (data.expenses || []).map(normalize);
       } catch (err) {
         toast("Couldn't reach the sheet — showing local copy. (" + err.message + ")");
@@ -616,7 +622,7 @@
   // ===========================================================================
   //  UI plumbing
   // ===========================================================================
-  function renderAllDynamic() { renderExpenses(); renderSettlement(); renderBudgetSummary(); renderActions(); }
+  function renderAllDynamic() { renderItinerary(); renderExpenses(); renderSettlement(); renderBudgetSummary(); renderActions(); }
 
   let toastT;
   function toast(msg) {
