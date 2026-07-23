@@ -387,10 +387,24 @@
   // ===========================================================================
   function buildActionForm() {
     const owner = $("#a_owner");
+    owner.appendChild(new Option("No owner", ""));
     C.people.forEach((p) => owner.appendChild(new Option(p.name, p.name)));
     owner.appendChild(new Option("Everyone", "Everyone"));
+    owner.value = "";
     $("#actionForm").addEventListener("submit", onSubmitAction);
     $("#actionCancelEdit").addEventListener("click", exitActionEdit);
+    $("#actionAddToggle").addEventListener("click", openAddAction);
+  }
+  function openActionForm() { $("#actionFormWrap").hidden = false; $("#actionAddToggle").hidden = true; }
+  function closeActionForm() { $("#actionFormWrap").hidden = true; $("#actionAddToggle").hidden = false; }
+  function openAddAction() {
+    STATE.editingActionId = null;
+    $("#actionForm").reset();
+    $("#a_owner").value = "";
+    $("#actionFormTitle").textContent = "➕ Add an action item";
+    $("#actionSubmitBtn").textContent = "Add action item";
+    $("#actionAddCard").classList.remove("editing");
+    openActionForm();
   }
 
   async function onSubmitAction(e) {
@@ -424,21 +438,22 @@
   function enterActionEdit(a) {
     STATE.editingActionId = a.id;
     $("#a_task").value = a.task;
-    $("#a_owner").value = [...$("#a_owner").options].some((o) => o.value === a.owner) ? a.owner : (C.people[0] && C.people[0].name);
-    $("#a_deadline").value = a.deadline || "";
+    $("#a_owner").value = [...$("#a_owner").options].some((o) => o.value === a.owner) ? a.owner : "";
+    $("#a_deadline").value = /^\d{4}-\d{2}-\d{2}$/.test(a.deadline || "") ? a.deadline : "";
     $("#actionFormTitle").textContent = "✏️ Edit action item";
     $("#actionSubmitBtn").textContent = "Save changes";
-    $("#actionCancelEdit").hidden = false;
     $("#actionAddCard").classList.add("editing");
+    openActionForm();
     $("#actionAddCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function exitActionEdit() {
     STATE.editingActionId = null;
     $("#actionForm").reset();
+    $("#a_owner").value = "";
     $("#actionFormTitle").textContent = "➕ Add an action item";
     $("#actionSubmitBtn").textContent = "Add action item";
-    $("#actionCancelEdit").hidden = true;
     $("#actionAddCard").classList.remove("editing");
+    closeActionForm();
   }
 
   async function toggleAction(a) {
@@ -464,6 +479,14 @@
     finally { setBusyEl("#actionForm", false); }
   }
 
+  function prettyDeadline(d) {
+    if (!d) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      const dt = new Date(d + "T00:00:00");
+      if (!isNaN(dt)) return dt.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    }
+    return d;
+  }
   function renderActions() {
     const wrap = $("#actionsByOwner");
     wrap.innerHTML = "";
@@ -476,7 +499,7 @@
     }
     // group by owner, owners with open tasks first
     const groups = {};
-    STATE.actions.forEach((a) => { const o = a.owner || "Unassigned"; (groups[o] = groups[o] || []).push(a); });
+    STATE.actions.forEach((a) => { const o = (a.owner && a.owner.trim()) ? a.owner : "No owner"; (groups[o] = groups[o] || []).push(a); });
     const owners = Object.keys(groups).sort((x, y) => {
       const ox = groups[x].filter((a) => !a.done).length, oy = groups[y].filter((a) => !a.done).length;
       return oy - ox || x.localeCompare(y);
@@ -493,7 +516,7 @@
         item.innerHTML =
           `<button class="check ${a.done ? "on" : ""}" title="${a.done ? "Mark not done" : "Mark done"}" data-id="${a.id}">${a.done ? "✓" : ""}</button>` +
           `<div class="action-main"><div class="action-task">${escapeHtml(a.task)}</div>` +
-          `${a.deadline ? `<div class="action-due">🗓️ ${escapeHtml(a.deadline)}</div>` : ""}</div>` +
+          `${a.deadline ? `<div class="action-due">🗓️ ${escapeHtml(prettyDeadline(a.deadline))}</div>` : ""}</div>` +
           `<div class="action-btns nowrap"><button class="icon-btn edit" title="Edit" data-id="${a.id}">✏️</button><button class="icon-btn del" title="Remove" data-id="${a.id}">✕</button></div>`;
         block.appendChild(item);
       });
@@ -511,8 +534,7 @@
   async function loadActions() {
     if (usingBackend) {
       try {
-        const url = C.backend.webAppUrl + (C.backend.webAppUrl.includes("?") ? "&" : "?") + "action=actions";
-        const res = await fetch(url);
+        const res = await fetch(bust(C.backend.webAppUrl, "action=actions"), { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || "actions failed");
         STATE.actions = (data.actions || []).map(normalizeAction);
@@ -537,24 +559,26 @@
   // ===========================================================================
   //  BACKEND
   // ===========================================================================
+  // Writes use a "simple" no-cors POST: Apps Script commits the change, and we
+  // then re-read via GET. (Reading a cross-origin POST response from Apps Script
+  // is unreliable; this pattern avoids that entirely.)
   async function api(action, payload) {
-    const res = await fetch(C.backend.webAppUrl, {
+    await fetch(C.backend.webAppUrl, {
       method: "POST",
+      mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action, ...payload }),
     });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "backend error");
-    return data;
+    return { ok: true };
   }
 
-  async function reload() { await Promise.all([loadExpenses(), loadActions()]); renderAllDynamic(); }
+  async function reload() { await Promise.allSettled([loadExpenses(), loadActions()]); renderAllDynamic(); }
+  const bust = (url, q) => url + (url.includes("?") ? "&" : "?") + q + "&_=" + Date.now();
 
   async function loadExpenses() {
     if (usingBackend) {
       try {
-        const url = C.backend.webAppUrl + (C.backend.webAppUrl.includes("?") ? "&" : "?") + "action=list";
-        const res = await fetch(url);
+        const res = await fetch(bust(C.backend.webAppUrl, "action=list"), { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || "list failed");
         if (data.rates) { STATE.gbpEur = data.rates.gbpEur || STATE.gbpEur; STATE.eurInr = data.rates.eurInr || STATE.eurInr; }
@@ -604,16 +628,24 @@
   const genId = () => "x" + Math.abs(hashStr(String(performance.now()) + ":" + STATE.expenses.length)).toString(36);
   function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
 
+  const LS_TAB = "trip_tab_" + (C.trip.name || "trip").replace(/\W+/g, "_");
+  function activateTab(id, scroll) {
+    const btn = document.querySelector(`.tab-btn[data-tab="${id}"]`);
+    const panel = document.getElementById(id);
+    if (!btn || !panel) return;
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    panel.classList.add("active");
+    try { localStorage.setItem(LS_TAB, id); } catch {}
+    if (scroll) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
   function initTabs() {
-    document.querySelectorAll(".tab-btn").forEach((btn) => btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-      btn.classList.add("active");
-      $("#" + btn.dataset.tab).classList.add("active");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }));
+    document.querySelectorAll(".tab-btn").forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab, true)));
     $("#viewCouple").addEventListener("click", () => { STATE.settleView = "couple"; renderSettlement(); });
     $("#viewPerson").addEventListener("click", () => { STATE.settleView = "person"; renderSettlement(); });
+    // restore last-viewed tab across refreshes
+    try { const saved = localStorage.getItem(LS_TAB); if (saved) activateTab(saved, false); } catch {}
   }
 
   // ===========================================================================

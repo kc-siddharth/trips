@@ -119,6 +119,8 @@
     <!-- ACTION ITEMS -->
     <section class="panel" id="tab-actions">
       <div class="card add-card" id="actionAddCard">
+        <button type="button" class="btn-primary add-toggle" id="actionAddToggle">➕ Add an action item</button>
+        <div id="actionFormWrap" hidden>
         <h2 id="actionFormTitle">➕ Add an action item</h2>
         <form id="actionForm" autocomplete="off">
           <div class="grid2">
@@ -132,14 +134,15 @@
             </label>
             <label class="field">
               <span>Deadline <em>(optional)</em></span>
-              <input type="text" id="a_deadline" placeholder="e.g. By 15 Aug 2026" />
+              <input type="date" id="a_deadline" />
             </label>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn-primary" id="actionSubmitBtn">Add action item</button>
-            <button type="button" class="btn-ghost" id="actionCancelEdit" hidden>Cancel</button>
+            <button type="button" class="btn-ghost" id="actionCancelEdit">Cancel</button>
           </div>
         </form>
+        </div>
       </div>
 
       <div class="card">
