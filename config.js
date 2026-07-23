@@ -23,7 +23,7 @@ const CONFIG = {
      Paste the Web App URL you get after deploying Code.gs (see README).
      Leave "" to run in DEMO mode (uses seedExpenses + this browser's storage). */
   backend: {
-    webAppUrl: "https://script.google.com/macros/s/AKfycbwxkQ8RWWRefqtbKqkcwBceuqzGG7jqeEu4Rb0gTgQbff0CcLVByKEBbXTdjvbEBABJDA/exec",            // e.g. "https://script.google.com/macros/s/AKfy.../exec"
+    webAppUrl: "https://script.google.com/macros/s/AKfycbwxkQ8RWWRefqtbKqkcwBceuqzGG7jqeEu4Rb0gTgQbff0CcLVByKEBbXTdjvbEBABJDA/exec",
   },
 
   /* ---- TRIP META --------------------------------------------------------- */
@@ -99,6 +99,21 @@ const CONFIG = {
     Contingency: 500,
   },
   perPersonCeilingInr: 150000,   // ₹1.5 lakh ground-cost ceiling per person
+
+  /* ---- SEED ACTION ITEMS (DEMO mode only) -------------------------------
+     Live mode reads these from the "Action Items" tab. status "Done" = complete. */
+  seedActions: [
+    { task: "Book private catamaran charter (Tossa marina, Sep 1)", owner: "Kc", deadline: "By 30 June 2026", status: "" },
+    { task: "Book Sagrada Familia tickets (4-6 weeks ahead)", owner: "Kc", deadline: "By 15 July 2026", status: "" },
+    { task: "Book Tablao Cordobés flamenco show (Barcelona)", owner: "Kc", deadline: "By 15 July 2026", status: "" },
+    { task: "Book Eiffel Tower summit access tickets", owner: "Kc", deadline: "By early July 2026", status: "" },
+    { task: "Book Louvre timed entry", owner: "Kc", deadline: "Few weeks before", status: "" },
+    { task: "Pre-book Paris → CDG van transfer (Sep 7, 5 ppl)", owner: "Kc", deadline: "By mid-August", status: "" },
+    { task: "Lyon bouchon dinner reservation (Café des Fédérations)", owner: "Kc", deadline: "By August", status: "" },
+    { task: "Final group dinner reservation in Paris (Sep 6)", owner: "Kc", deadline: "By August", status: "" },
+    { task: "Confirm accommodation bookings with the group", owner: "Kc", deadline: "By 15 May 2026", status: "Done" },
+    { task: "Book all trains (Renfe + both TGVs)", owner: "Kc", deadline: "By 15 July 2026", status: "Done" },
+  ],
 
   /* ---- SEED EXPENSES (DEMO mode only) -----------------------------------
      shares line up with people[] order: 1 = normal, 0 = excluded, 2 = double. */

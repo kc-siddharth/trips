@@ -22,6 +22,7 @@
     <nav class="tabs" id="tabs">
       <button class="tab-btn active" data-tab="tab-split">💸 Split &amp; Settle</button>
       <button class="tab-btn" data-tab="tab-itin">🗺️ Itinerary</button>
+      <button class="tab-btn" data-tab="tab-actions">✅ Actions</button>
       <button class="tab-btn" data-tab="tab-stays">🏠 Stays</button>
       <button class="tab-btn" data-tab="tab-budget">📊 Budget</button>
     </nav>
@@ -112,6 +113,41 @@
 
         <h3 class="settle-h3">Simplest way to settle up <span class="settle-hint" id="transferHint"></span></h3>
         <div class="transfers" id="transferList"></div>
+      </div>
+    </section>
+
+    <!-- ACTION ITEMS -->
+    <section class="panel" id="tab-actions">
+      <div class="card add-card" id="actionAddCard">
+        <h2 id="actionFormTitle">➕ Add an action item</h2>
+        <form id="actionForm" autocomplete="off">
+          <div class="grid2">
+            <label class="field span2">
+              <span>Task</span>
+              <input type="text" id="a_task" placeholder="e.g. Book Seine river cruise tickets" required />
+            </label>
+            <label class="field">
+              <span>Owner</span>
+              <select id="a_owner"></select>
+            </label>
+            <label class="field">
+              <span>Deadline <em>(optional)</em></span>
+              <input type="text" id="a_deadline" placeholder="e.g. By 15 Aug 2026" />
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary" id="actionSubmitBtn">Add action item</button>
+            <button type="button" class="btn-ghost" id="actionCancelEdit" hidden>Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>✅ Who needs to do what</h2>
+          <div class="sub" id="actionProgress"></div>
+        </div>
+        <div id="actionsByOwner"></div>
       </div>
     </section>
 

@@ -27,6 +27,8 @@
     expenses: [],
     editingId: null,
     settleView: "couple",                       // "couple" | "person"
+    actions: [],
+    editingActionId: null,
   };
 
   // --- money helpers ---------------------------------------------------------
@@ -381,6 +383,158 @@
   }
 
   // ===========================================================================
+  //  ACTION ITEMS
+  // ===========================================================================
+  function buildActionForm() {
+    const owner = $("#a_owner");
+    C.people.forEach((p) => owner.appendChild(new Option(p.name, p.name)));
+    owner.appendChild(new Option("Everyone", "Everyone"));
+    $("#actionForm").addEventListener("submit", onSubmitAction);
+    $("#actionCancelEdit").addEventListener("click", exitActionEdit);
+  }
+
+  async function onSubmitAction(e) {
+    e.preventDefault();
+    const item = {
+      task: $("#a_task").value.trim(),
+      owner: $("#a_owner").value,
+      deadline: $("#a_deadline").value.trim(),
+      status: "",
+    };
+    if (!item.task) { toast("Add a task."); return; }
+    setBusyEl("#actionForm", true);
+    try {
+      if (STATE.editingActionId != null) {
+        const cur = STATE.actions.find((a) => a.id === STATE.editingActionId);
+        item.status = cur ? cur.status : "";  // keep done/pending as-is when editing text
+        if (usingBackend) await api("updateAction", { id: STATE.editingActionId, item });
+        else { Object.assign(cur, item, { done: item.status.toLowerCase() === "done" }); persistActions(); }
+        toast("Action updated ✓");
+      } else {
+        if (usingBackend) await api("addAction", { item });
+        else { STATE.actions.push({ ...item, id: genId(), done: false }); persistActions(); }
+        toast("Action added ✓");
+      }
+      exitActionEdit();
+      await reload();
+    } catch (err) { toast("Couldn't save: " + err.message); }
+    finally { setBusyEl("#actionForm", false); }
+  }
+
+  function enterActionEdit(a) {
+    STATE.editingActionId = a.id;
+    $("#a_task").value = a.task;
+    $("#a_owner").value = [...$("#a_owner").options].some((o) => o.value === a.owner) ? a.owner : (C.people[0] && C.people[0].name);
+    $("#a_deadline").value = a.deadline || "";
+    $("#actionFormTitle").textContent = "✏️ Edit action item";
+    $("#actionSubmitBtn").textContent = "Save changes";
+    $("#actionCancelEdit").hidden = false;
+    $("#actionAddCard").classList.add("editing");
+    $("#actionAddCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function exitActionEdit() {
+    STATE.editingActionId = null;
+    $("#actionForm").reset();
+    $("#actionFormTitle").textContent = "➕ Add an action item";
+    $("#actionSubmitBtn").textContent = "Add action item";
+    $("#actionCancelEdit").hidden = true;
+    $("#actionAddCard").classList.remove("editing");
+  }
+
+  async function toggleAction(a) {
+    const status = a.done ? "" : "Done";
+    setBusyEl("#actionForm", true);
+    try {
+      if (usingBackend) await api("updateAction", { id: a.id, item: { status } });
+      else { a.status = status; a.done = !a.done; persistActions(); }
+      await reload();
+    } catch (err) { toast("Couldn't update: " + err.message); }
+    finally { setBusyEl("#actionForm", false); }
+  }
+
+  async function deleteAction(id) {
+    if (!confirm("Remove this action item?")) return;
+    setBusyEl("#actionForm", true);
+    try {
+      if (usingBackend) await api("deleteAction", { id });
+      else { STATE.actions = STATE.actions.filter((a) => a.id !== id); persistActions(); }
+      if (STATE.editingActionId === id) exitActionEdit();
+      await reload();
+    } catch (err) { toast("Couldn't delete: " + err.message); }
+    finally { setBusyEl("#actionForm", false); }
+  }
+
+  function renderActions() {
+    const wrap = $("#actionsByOwner");
+    wrap.innerHTML = "";
+    const total = STATE.actions.length;
+    const done = STATE.actions.filter((a) => a.done).length;
+    $("#actionProgress").textContent = total ? `${done}/${total} done` : "";
+    if (!total) {
+      wrap.innerHTML = `<div class="muted center" style="padding:16px">No action items yet — add the first one above.</div>`;
+      return;
+    }
+    // group by owner, owners with open tasks first
+    const groups = {};
+    STATE.actions.forEach((a) => { const o = a.owner || "Unassigned"; (groups[o] = groups[o] || []).push(a); });
+    const owners = Object.keys(groups).sort((x, y) => {
+      const ox = groups[x].filter((a) => !a.done).length, oy = groups[y].filter((a) => !a.done).length;
+      return oy - ox || x.localeCompare(y);
+    });
+    owners.forEach((owner) => {
+      const items = groups[owner].slice().sort((a, b) => Number(a.done) - Number(b.done));
+      const openN = items.filter((a) => !a.done).length;
+      const block = el("div", "owner-block");
+      block.appendChild(el("div", "owner-head",
+        `<span class="owner-name">${escapeHtml(owner)}</span>` +
+        `<span class="owner-count">${openN ? openN + " open" : "all done ✓"}</span>`));
+      items.forEach((a) => {
+        const item = el("div", "action-item" + (a.done ? " done" : ""));
+        item.innerHTML =
+          `<button class="check ${a.done ? "on" : ""}" title="${a.done ? "Mark not done" : "Mark done"}" data-id="${a.id}">${a.done ? "✓" : ""}</button>` +
+          `<div class="action-main"><div class="action-task">${escapeHtml(a.task)}</div>` +
+          `${a.deadline ? `<div class="action-due">🗓️ ${escapeHtml(a.deadline)}</div>` : ""}</div>` +
+          `<div class="action-btns nowrap"><button class="icon-btn edit" title="Edit" data-id="${a.id}">✏️</button><button class="icon-btn del" title="Remove" data-id="${a.id}">✕</button></div>`;
+        block.appendChild(item);
+      });
+      wrap.appendChild(block);
+    });
+    wrap.querySelectorAll(".check").forEach((b) => b.addEventListener("click", () => {
+      const a = STATE.actions.find((x) => x.id === b.dataset.id); if (a) toggleAction(a);
+    }));
+    wrap.querySelectorAll(".action-btns .edit").forEach((b) => b.addEventListener("click", () => {
+      const a = STATE.actions.find((x) => x.id === b.dataset.id); if (a) enterActionEdit(a);
+    }));
+    wrap.querySelectorAll(".action-btns .del").forEach((b) => b.addEventListener("click", () => deleteAction(b.dataset.id)));
+  }
+
+  async function loadActions() {
+    if (usingBackend) {
+      try {
+        const url = C.backend.webAppUrl + (C.backend.webAppUrl.includes("?") ? "&" : "?") + "action=actions";
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "actions failed");
+        STATE.actions = (data.actions || []).map(normalizeAction);
+      } catch (err) {
+        STATE.actions = loadActionsLocal();
+      }
+    } else {
+      STATE.actions = loadActionsLocal();
+      if (!STATE.actions.length) {
+        STATE.actions = (C.seedActions || []).map((a, i) => ({ ...a, id: "sa" + i, done: (a.status || "").toLowerCase() === "done" }));
+        persistActions();
+      }
+    }
+  }
+  function normalizeAction(a) {
+    return { id: String(a.id), task: a.task || "", owner: a.owner || "", deadline: a.deadline || "", status: a.status || "", done: !!a.done || (a.status || "").toLowerCase() === "done" };
+  }
+  const LS_ACT = "trip_actions_" + (C.trip.name || "trip").replace(/\W+/g, "_");
+  function persistActions() { try { localStorage.setItem(LS_ACT, JSON.stringify(STATE.actions)); } catch {} }
+  function loadActionsLocal() { try { return JSON.parse(localStorage.getItem(LS_ACT) || "[]").map(normalizeAction); } catch { return []; } }
+
+  // ===========================================================================
   //  BACKEND
   // ===========================================================================
   async function api(action, payload) {
@@ -394,7 +548,7 @@
     return data;
   }
 
-  async function reload() { await loadExpenses(); renderAllDynamic(); }
+  async function reload() { await Promise.all([loadExpenses(), loadActions()]); renderAllDynamic(); }
 
   async function loadExpenses() {
     if (usingBackend) {
@@ -438,7 +592,7 @@
   // ===========================================================================
   //  UI plumbing
   // ===========================================================================
-  function renderAllDynamic() { renderExpenses(); renderSettlement(); renderBudgetSummary(); }
+  function renderAllDynamic() { renderExpenses(); renderSettlement(); renderBudgetSummary(); renderActions(); }
 
   let toastT;
   function toast(msg) {
@@ -446,6 +600,7 @@
     clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 3400);
   }
   function setBusy(b) { $("#expenseForm").classList.toggle("busy", b); }
+  function setBusyEl(sel, b) { const n = $(sel); if (n) n.classList.toggle("busy", b); }
   const genId = () => "x" + Math.abs(hashStr(String(performance.now()) + ":" + STATE.expenses.length)).toString(36);
   function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
 
@@ -469,8 +624,9 @@
     renderItinerary();
     renderStays();
     buildForm();
+    buildActionForm();
     initTabs();
-    await loadExpenses();
+    await Promise.all([loadExpenses(), loadActions()]);
     renderAllDynamic();
   });
 })();

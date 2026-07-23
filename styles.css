@@ -213,6 +213,26 @@ form.busy { opacity: 0.6; pointer-events: none; }
 .t-amt { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
 .t-amt em { font-style: normal; color: var(--muted); font-weight: 500; font-size: 12.5px; margin-left: 4px; }
 
+/* ---- ACTION ITEMS ---- */
+.owner-block { margin-bottom: 18px; }
+.owner-block:last-child { margin-bottom: 0; }
+.owner-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
+.owner-name { font-family: "Fraunces", serif; font-weight: 700; font-size: 17px; color: var(--deep); }
+.owner-count { font-size: 12px; font-weight: 700; color: var(--sun); text-transform: uppercase; letter-spacing: 0.3px; }
+.action-item { display: flex; align-items: flex-start; gap: 12px; padding: 11px 4px; border-bottom: 1px solid var(--line); }
+.action-item:last-child { border-bottom: none; }
+.action-main { flex: 1; }
+.action-task { font-weight: 600; font-size: 14.5px; line-height: 1.4; }
+.action-due { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.action-item.done .action-task { text-decoration: line-through; color: var(--muted); font-weight: 500; }
+.check {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px; margin-top: 1px; cursor: pointer;
+  border: 2px solid #d5dbde; background: #fff; color: #fff; font-size: 14px; font-weight: 800; line-height: 1; transition: all 0.15s;
+}
+.check:hover { border-color: var(--sea); }
+.check.on { background: var(--sea); border-color: var(--sea); }
+.action-btns { display: flex; align-items: center; }
+
 /* ---- ITINERARY ---- */
 .itin-list { display: flex; flex-direction: column; gap: 10px; }
 .itin-card { display: flex; gap: 14px; padding: 14px; border-radius: 14px; background: #fbfbfb; border: 1px solid var(--line); }
