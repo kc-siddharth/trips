@@ -132,6 +132,40 @@ main { max-width: 900px; margin: 0 auto; padding: 22px 16px 60px; }
 .btn-primary:active { transform: translateY(0); }
 form.busy { opacity: 0.6; pointer-events: none; }
 
+.form-actions { display: flex; gap: 10px; align-items: center; }
+.form-actions .btn-primary { margin-top: 16px; flex: 1; }
+.btn-ghost {
+  margin-top: 16px; border: 1.5px solid var(--line); background: #fff; color: var(--muted);
+  font-family: inherit; font-weight: 600; font-size: 15px; padding: 13px 18px; border-radius: 13px; cursor: pointer;
+}
+.btn-ghost:hover { border-color: var(--muted); color: var(--ink); }
+.add-card.editing { border-top-color: var(--sea); box-shadow: 0 0 0 2px rgba(31,182,166,0.25), var(--shadow); }
+
+/* segmented toggle */
+.seg { display: inline-flex; background: #f1f3f4; border-radius: 11px; padding: 3px; margin-bottom: 14px; }
+.seg-btn {
+  border: none; background: transparent; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 13.5px;
+  color: var(--muted); padding: 8px 16px; border-radius: 9px; transition: all 0.15s;
+}
+.seg-btn.active { background: #fff; color: var(--deep); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+.settle-hint { font-family: "Inter", sans-serif; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+
+/* per-person cards */
+.pp-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.pp { background: #fbfbfb; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.pp-label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.pp-big { font-family: "Fraunces", serif; font-size: 24px; font-weight: 700; color: var(--deep); margin: 4px 0 2px; }
+.pp-small { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+
+.icon-btn {
+  border: none; background: #f4f4f4; color: var(--muted); cursor: pointer; width: 28px; height: 28px;
+  border-radius: 8px; font-size: 13px; transition: all 0.15s; margin-left: 4px;
+}
+.icon-btn.edit:hover { background: rgba(31,182,166,0.15); }
+.icon-btn.del:hover { background: #ffe3e0; color: var(--neg); }
+.nowrap { white-space: nowrap; }
+.ex-date { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
 /* ---- TABLES ---- */
 .table-wrap { overflow-x: auto; margin: 0 -6px; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 14.5px; }

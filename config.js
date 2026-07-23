@@ -7,18 +7,21 @@
 
    Quick start for a NEW trip:
      1. backend.webAppUrl  -> paste the URL of your deployed Apps Script (see README)
-     2. trip {...}         -> name, dates, tagline, currency symbols
-     3. people [...]       -> who's in the group + couple/solo groupings
-     4. rates {...}        -> exchange rates into the base currency
-     5. itinerary / stays / budget -> the trip's plan and numbers
+     2. trip {...}         -> name, dates, tagline, currency
+     3. people [...]       -> the group + couple groupings + which member is the spoc
+     4. itinerary / stays / budget -> the trip's plan and numbers
+
+   NOTE ON MONEY: when the backend is connected, all currency conversion and the
+   settlement totals come straight from your Google Sheet (its Currency Reference
+   tab + Amount (€) formulas), so the website always matches the sheet. The
+   `demoRates` below are only used for the offline preview when no backend is set.
    ============================================================================= */
 
 const CONFIG = {
 
   /* ---- BACKEND -----------------------------------------------------------
      Paste the Web App URL you get after deploying Code.gs (see README).
-     Leave as "" to run in DEMO mode (uses seedExpenses below + this browser's
-     local storage, so you can preview before wiring up the Google Sheet). */
+     Leave "" to run in DEMO mode (uses seedExpenses + this browser's storage). */
   backend: {
     webAppUrl: "https://script.google.com/macros/s/AKfycbwxkQ8RWWRefqtbKqkcwBceuqzGG7jqeEu4Rb0gTgQbff0CcLVByKEBbXTdjvbEBABJDA/exec",            // e.g. "https://script.google.com/macros/s/AKfy.../exec"
   },
@@ -31,40 +34,35 @@ const CONFIG = {
     endDate: "2026-09-07",
     groupSize: 7,
     heroEmoji: "🌴",
-    // Cities shown as chips in the hero
     cities: ["Barcelona", "Girona", "Lyon", "Paris"],
   },
 
   /* ---- CURRENCY ----------------------------------------------------------
-     baseCurrency = the currency everything is settled in.
-     rates = how many BASE units one unit of each currency is worth.
-     (Base currency must be 1.) displayCurrency adds a secondary readout. */
-  baseCurrency: "EUR",
-  currencySymbols: { EUR: "€", GBP: "£", INR: "₹", USD: "$" },
-  rates: {
-    EUR: 1,        // base
-    GBP: 1.165,    // 1 GBP = 1.165 EUR
-    USD: 0.92,     // 1 USD = 0.92 EUR   (default — adjust to current rate)
-    INR: 0.011,    // 1 INR = 0.011 EUR  (~ €1 = ₹90; used if someone pays in ₹)
-  },
-  // Secondary currency shown alongside the base (for the folks thinking in ₹)
-  displayCurrency: "INR",
-  displayRate: 112,   // 1 EUR = 112 INR (secondary readout only)
+     baseSymbol = the currency everything settles in.
+     currencies = what people can pay in (symbols must match the sheet's dropdown).
+     displaySymbol/displayRate = a secondary readout shown alongside the base. */
+  baseSymbol: "€",
+  currencies: ["€", "£", "₹", "$"],
+  displaySymbol: "₹",
+  displayRate: 112,   // 1 € = 112 ₹  (secondary readout; live mode uses the sheet)
+
+  // Offline-preview conversion only (symbol -> value in €). Live mode ignores these.
+  demoRates: { "€": 1, "£": 1.165, "₹": 1 / 112, "$": 112 / 95.19 },
 
   /* ---- PEOPLE ------------------------------------------------------------
-     "group" is just a label (couple/solo) shown in the UI. Order = P1..Pn,
-     which must match the columns your Apps Script writes. Add/remove freely. */
+     Order = P1..Pn and MUST match the P columns in the sheet.
+     group  = couple/unit label. spoc:true marks the one person who represents
+     that couple when settling up (the couple's expenses net through them). */
   people: [
-    { id: "P1", name: "Kc",        group: "Couple A" },
+    { id: "P1", name: "Kc",        group: "Couple A", spoc: true },
     { id: "P2", name: "Ankita",    group: "Couple A" },
-    { id: "P3", name: "Madhumay",  group: "Couple B" },
+    { id: "P3", name: "Madhumay",  group: "Couple B", spoc: true },
     { id: "P4", name: "Anusha",    group: "Couple B" },
-    { id: "P5", name: "Parikshit", group: "Couple C" },
+    { id: "P5", name: "Parikshit", group: "Couple C", spoc: true },
     { id: "P6", name: "Jushmita",  group: "Couple C" },
-    { id: "P7", name: "Nuri",      group: "Solo" },
+    { id: "P7", name: "Nuri",      group: "Solo",     spoc: true },
   ],
 
-  /* Expense categories offered in the add-expense form */
   categories: ["Accommodation", "Travel", "Activities", "Food", "Contingency", "Other"],
 
   /* ---- ITINERARY --------------------------------------------------------- */
@@ -91,51 +89,27 @@ const CONFIG = {
     { city: "Paris",     checkIn: "4 Sep",  checkOut: "7 Sep",  nights: 3, address: "22 Avenue du Professeur Lemierre, Montreuil", costEUR: 728, perNight: 243 },
   ],
 
-  /* ---- BUDGET vs ACTUAL --------------------------------------------------
-     actual = null means "not booked yet". Subtotals & variance auto-calculate. */
-  budget: [
-    { category: "Accommodation", item: "Barcelona (3 nights — Sarrià)",         budgeted: 1293, actual: 1293 },
-    { category: "Accommodation", item: "Girona (3 nights)",                     budgeted: 952,  actual: 952 },
-    { category: "Accommodation", item: "Lyon (2 nights, all 7)",                budgeted: 552,  actual: 552 },
-    { category: "Accommodation", item: "Paris Sep 4-7 (5 ppl, 2-bath)",         budgeted: 900,  actual: 728 },
-    { category: "Travel", item: "Renfe BCN → Girona (all 7)",                   budgeted: 157,  actual: 133 },
-    { category: "Travel", item: "Catamaran-day private van (Girona ↔ Tossa)",   budgeted: 1250, actual: null },
-    { category: "Travel", item: "TGV Girona → Lyon (all 7)",                    budgeted: 670,  actual: 600 },
-    { category: "Travel", item: "TGV Lyon → Paris (5 ppl)",                     budgeted: 300,  actual: 156 },
-    { category: "Travel", item: "Paris → CDG private van (5 ppl)",              budgeted: 130,  actual: null },
-    { category: "Travel", item: "Local transit (metros, taxis)",               budgeted: 200,  actual: null },
-    { category: "Activities", item: "Sagrada Familia (€30 × 7)",                budgeted: 210,  actual: null },
-    { category: "Activities", item: "Park Güell (€15 × 7)",                     budgeted: 105,  actual: null },
-    { category: "Activities", item: "Picasso Museum (€15 × 7)",                 budgeted: 105,  actual: null },
-    { category: "Activities", item: "Casa Batlló (optional, €40 × 7)",          budgeted: 280,  actual: null },
-    { category: "Activities", item: "Tablao Cordobés flamenco (€45 × 7)",       budgeted: 315,  actual: null },
-    { category: "Activities", item: "Lyon walking + Fourvière (€5 × 7)",        budgeted: 35,   actual: null },
-    { category: "Activities", item: "Lyon bouchon dinner (€50 × 7)",            budgeted: 350,  actual: null },
-    { category: "Activities", item: "Eiffel Tower summit (€30 × 5)",            budgeted: 150,  actual: null },
-    { category: "Activities", item: "Louvre (€22 × 5)",                         budgeted: 110,  actual: null },
-    { category: "Activities", item: "Seine cruise (€40 × 5)",                   budgeted: 200,  actual: null },
-    { category: "Activities", item: "Versailles (optional, €30 × 5)",           budgeted: 150,  actual: null },
-    { category: "Activities", item: "Misc tickets / surprises",                 budgeted: 200,  actual: null },
-    { category: "Food", item: "Barcelona street food (3d × 7 × €40)",           budgeted: 840,  actual: null },
-    { category: "Food", item: "Girona street food (3d × 7 × €40)",              budgeted: 840,  actual: null },
-    { category: "Food", item: "Lyon street food (2d × 7 × €45)",                budgeted: 630,  actual: null },
-    { category: "Food", item: "Paris street food (3d × 5 × €45)",               budgeted: 675,  actual: null },
-    { category: "Food", item: "Travel-day snacks / coffees",                    budgeted: 100,  actual: null },
-    { category: "Contingency", item: "Buffer / surprises",                      budgeted: 500,  actual: null },
-  ],
+  /* ---- BUDGET (category ceilings, matching your Budget Summary) ----------
+     Actuals are pulled live from the expenses; you only set the budgeted €. */
+  categoryBudgets: {
+    Accommodation: 3697,
+    Travel: 2707,
+    Activities: 2210,
+    Food: 3085,
+    Contingency: 500,
+  },
+  perPersonCeilingInr: 150000,   // ₹1.5 lakh ground-cost ceiling per person
 
-  /* ---- SEED EXPENSES -----------------------------------------------------
-     Used only in DEMO mode (no backend URL) AND as the initial rows your
-     Apps Script writes the first time you run its setup. shares array lines up
-     with people[] order: 1 = normal share, 0 = excluded, 2 = double share. */
+  /* ---- SEED EXPENSES (DEMO mode only) -----------------------------------
+     shares line up with people[] order: 1 = normal, 0 = excluded, 2 = double. */
   seedExpenses: [
-    { date: "", desc: "Barcelona Stay",    category: "Accommodation", currency: "GBP", amount: 920.19, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
-    { date: "", desc: "Girona Stay",       category: "Accommodation", currency: "GBP", amount: 817.55, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
-    { date: "", desc: "Lyon Stay",         category: "Accommodation", currency: "GBP", amount: 444.00, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
-    { date: "", desc: "Paris Stay",        category: "Accommodation", currency: "GBP", amount: 625.57, paidBy: "Kc", shares: [1,1,1,1,0,0,1] },
-    { date: "", desc: "Barcelona → Girona",category: "Travel",        currency: "GBP", amount: 112.77, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
-    { date: "", desc: "Girona → Lyon",     category: "Travel",        currency: "GBP", amount: 509.96, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
-    { date: "", desc: "Lyon → Paris",      category: "Travel",        currency: "GBP", amount: 131.62, paidBy: "Kc", shares: [1,1,1,1,0,0,1] },
-    { date: "", desc: "Car rental",        category: "Travel",        currency: "EUR", amount: 142.21, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
+    { date: "", desc: "Barcelona Stay",     category: "Accommodation", currency: "£", amount: 920.19, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
+    { date: "", desc: "Girona Stay",        category: "Accommodation", currency: "£", amount: 817.55, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
+    { date: "", desc: "Lyon Stay",          category: "Accommodation", currency: "£", amount: 444.00, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
+    { date: "", desc: "Paris Stay",         category: "Accommodation", currency: "£", amount: 625.57, paidBy: "Kc", shares: [1,1,1,1,0,0,1] },
+    { date: "", desc: "Barcelona → Girona", category: "Travel",        currency: "£", amount: 112.77, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
+    { date: "", desc: "Girona → Lyon",      category: "Travel",        currency: "£", amount: 509.96, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
+    { date: "", desc: "Lyon → Paris",       category: "Travel",        currency: "£", amount: 131.62, paidBy: "Kc", shares: [1,1,1,1,0,0,1] },
+    { date: "", desc: "Car rental",         category: "Travel",        currency: "€", amount: 142.21, paidBy: "Kc", shares: [1,1,1,1,1,1,1] },
   ],
 };
