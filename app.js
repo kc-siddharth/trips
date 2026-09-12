@@ -539,10 +539,9 @@
   async function loadActions() {
     if (usingBackend) {
       try {
-        const res = await fetch(bust(C.backend.webAppUrl, "action=actions"), { cache: "no-store" });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || "actions failed");
+        const data = await getJson("action=actions");
         STATE.actions = (data.actions || []).map(normalizeAction);
+        persistActions();   // cache, same reason as the expenses above
       } catch (err) {
         STATE.actions = loadActionsLocal();
       }
@@ -579,19 +578,49 @@
 
   async function reload() { await Promise.allSettled([loadExpenses(), loadActions()]); renderAllDynamic(); }
   const bust = (url, q) => url + (url.includes("?") ? "&" : "?") + q + "&_=" + Date.now();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Apps Script deployments intermittently answer 404/503 or hang for tens of
+  // seconds. A single bad response used to blank the whole board, so reads now
+  // retry with backoff and only give up once every attempt has failed.
+  const READ_TRIES = 4;
+  const READ_TIMEOUT_MS = 20000;
+
+  async function getJson(query) {
+    let lastErr;
+    for (let attempt = 0; attempt < READ_TRIES; attempt++) {
+      if (attempt) await sleep(600 * Math.pow(2, attempt - 1));   // 0.6s, 1.2s, 2.4s
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), READ_TIMEOUT_MS);
+      try {
+        const res = await fetch(bust(C.backend.webAppUrl, query), { cache: "no-store", signal: ctl.signal });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || query + " failed");
+        return data;
+      } catch (err) {
+        lastErr = (err && err.name === "AbortError") ? new Error("timed out") : err;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw lastErr || new Error(query + " failed");
+  }
 
   async function loadExpenses() {
     if (usingBackend) {
       try {
-        const res = await fetch(bust(C.backend.webAppUrl, "action=list"), { cache: "no-store" });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || "list failed");
+        const data = await getJson("action=list");
         if (data.rates) { STATE.gbpEur = data.rates.gbpEur || STATE.gbpEur; STATE.eurInr = data.rates.eurInr || STATE.eurInr; }
         if (Array.isArray(data.itinerary) && data.itinerary.length) STATE.itinerary = data.itinerary;
         STATE.expenses = (data.expenses || []).map(normalize);
+        persistLocal();   // cache the good copy so an outage still shows real numbers
       } catch (err) {
-        toast("Couldn't reach the sheet — showing local copy. (" + err.message + ")");
-        STATE.expenses = loadLocal();
+        const cached = loadLocal();
+        STATE.expenses = cached;
+        toast(cached.length
+          ? "Couldn't reach the sheet — showing the last saved copy. Refresh to retry."
+          : "Couldn't reach the sheet and nothing is cached yet. (" + err.message + ")");
       }
     } else {
       STATE.expenses = loadLocal();
