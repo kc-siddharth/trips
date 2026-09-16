@@ -1,6 +1,12 @@
 /* =============================================================================
    app.js  —  the engine. You normally never need to edit this.
    All trip-specific values live in config.js.
+
+   BACKEND PROTOCOL (matches Code.gs)
+     Every call is a POST with a text/plain JSON body:
+       { action: "list" | "actions" | "add" | ..., key: <trip passcode>, ... }
+     The passcode is asked for once per device and kept in localStorage.
+     Nothing is sent in the URL.
    ============================================================================= */
 
 (() => {
@@ -14,11 +20,14 @@
     if (html != null) n.innerHTML = html;
     return n;
   };
-  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const escapeHtml = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const esc = escapeHtml;
   const slug = (s) => String(s).toLowerCase().replace(/\W+/g, "");
 
   const usingBackend = !!(C.backend && C.backend.webAppUrl);
-  const LS_KEY = "trip_expenses_" + (C.trip.name || "trip").replace(/\W+/g, "_");
+  const TRIP_SLUG = (C.trip.name || "trip").replace(/\W+/g, "_");
+  const LS_KEY = "trip_expenses_" + TRIP_SLUG;
+  const LS_PASS = "trip_key_" + TRIP_SLUG;
 
   // live rates (populated from the sheet when the backend is connected)
   const STATE = {
@@ -48,7 +57,11 @@
     $("#tripTagline").textContent = C.trip.tagline || "";
     $("#tripDates").textContent = fmtDateRange(C.trip.startDate, C.trip.endDate);
     const chips = $("#cityChips");
-    (C.trip.cities || []).forEach((city) => chips.appendChild(el("span", "chip", city)));
+    (C.trip.cities || []).forEach((city) => {
+      const chip = el("span", "chip");
+      chip.textContent = city;
+      chips.appendChild(chip);
+    });
     if (!usingBackend) $("#demoBanner").hidden = false;
   }
   function fmtDateRange(a, b) {
@@ -73,10 +86,10 @@
       const day = d.day === "" || d.day == null ? "" : `Day ${Number(d.day) || d.day}`;
       const dow = (d.dow || "").slice(0, 3);
       const card = el("div", "itin-card");
-      card.appendChild(el("div", "itin-day", `${day}<span>${escapeHtml((dow + " " + (d.date || "")).trim())}</span>`));
+      card.appendChild(el("div", "itin-day", `${esc(day)}<span>${esc((dow + " " + (d.date || "")).trim())}</span>`));
       const body = el("div", "itin-body");
-      body.appendChild(el("div", "itin-city", escapeHtml(d.city) + (d.travel ? ` <span class="itin-travel">${escapeHtml(d.travel)}</span>` : "")));
-      body.appendChild(el("div", "itin-plan", escapeHtml(d.plan)));
+      body.appendChild(el("div", "itin-city", esc(d.city) + (d.travel ? ` <span class="itin-travel">${esc(d.travel)}</span>` : "")));
+      body.appendChild(el("div", "itin-plan", esc(d.plan)));
       card.appendChild(body);
       wrap.appendChild(card);
     });
@@ -85,13 +98,15 @@
   function renderStays() {
     const wrap = $("#staysList");
     let total = 0;
-    C.stays.forEach((s) => {
-      total += s.costEUR;
+    (C.stays || []).forEach((s) => {
+      const cost = Number(s.costEUR) || 0;
+      const nights = Number(s.nights) || 0;
+      total += cost;
       const card = el("div", "stay-card");
-      card.appendChild(el("div", "stay-city", s.city));
-      card.appendChild(el("div", "stay-dates", `${s.checkIn} → ${s.checkOut} · ${s.nights} night${s.nights > 1 ? "s" : ""}`));
-      card.appendChild(el("div", "stay-addr", s.address));
-      card.appendChild(el("div", "stay-cost", `${fmtBase(s.costEUR)} <span>· ${fmtBase(s.perNight)}/night</span>`));
+      card.appendChild(el("div", "stay-city", esc(s.city)));
+      card.appendChild(el("div", "stay-dates", `${esc(s.checkIn)} → ${esc(s.checkOut)} · ${nights} night${nights === 1 ? "" : "s"}`));
+      if (s.address) card.appendChild(el("div", "stay-addr", esc(s.address)));
+      card.appendChild(el("div", "stay-cost", `${fmtBase(cost)} <span>· ${fmtBase(Number(s.perNight) || 0)}/night</span>`));
       wrap.appendChild(card);
     });
     $("#staysTotal").innerHTML = `Total accommodation: <strong>${fmtBase(total)}</strong> · ${fmtInr(total)}`;
@@ -118,7 +133,7 @@
       const varc = act - bud;
       const tr = el("tr");
       tr.innerHTML =
-        `<td><span class="cat-dot cat-${slug(k)}"></span>${k}</td>` +
+        `<td><span class="cat-dot cat-${slug(k)}"></span>${esc(k)}</td>` +
         `<td class="num">${fmtBase(act)}</td>` +
         `<td class="num muted">${fmtInr(act)}</td>` +
         `<td class="num muted">${fmtGbp(act)}</td>` +
@@ -148,7 +163,7 @@
       ppCard("Headroom vs ceiling (actual)", fmtBase(headroom), (headroom >= 0 ? "Under budget ✓" : "Over — trim"), headroom >= 0 ? "pos" : "neg");
   }
   function ppCard(label, big, small, cls) {
-    return `<div class="pp"><div class="pp-label">${label}</div><div class="pp-big ${cls || ""}">${big}</div><div class="pp-small">${small}</div></div>`;
+    return `<div class="pp"><div class="pp-label">${esc(label)}</div><div class="pp-big ${cls || ""}">${esc(big)}</div><div class="pp-small">${esc(small)}</div></div>`;
   }
 
   // ===========================================================================
@@ -162,7 +177,7 @@
     const shareWrap = $("#f_shares");
     C.people.forEach((p, i) => {
       const lab = el("label", "share-pill");
-      lab.innerHTML = `<input type="checkbox" data-i="${i}" checked><span>${escapeHtml(p.name)}</span>`;
+      lab.innerHTML = `<input type="checkbox" data-i="${i}" checked><span>${esc(p.name)}</span>`;
       shareWrap.appendChild(lab);
     });
     $("#expenseForm").addEventListener("submit", onSubmitExpense);
@@ -191,7 +206,7 @@
     setBusy(true);
     try {
       if (STATE.editingId != null) {
-        if (usingBackend) await api("update", { id: STATE.editingId, expense: exp });
+        if (usingBackend) await apiWrite("update", { id: STATE.editingId, expense: exp });
         else {
           const idx = STATE.expenses.findIndex((x) => x.id === STATE.editingId);
           if (idx >= 0) STATE.expenses[idx] = { ...STATE.expenses[idx], ...exp, amountEur: demoEur(exp.amount, exp.currency) };
@@ -199,7 +214,7 @@
         }
         toast("Expense updated ✓");
       } else {
-        if (usingBackend) await api("add", { expense: exp });
+        if (usingBackend) await apiWrite("add", { expense: exp });
         else {
           STATE.expenses.push({ ...exp, id: genId(), amountEur: demoEur(exp.amount, exp.currency) });
           persistLocal();
@@ -245,7 +260,7 @@
     if (!confirm("Remove this expense?")) return;
     setBusy(true);
     try {
-      if (usingBackend) await api("delete", { id });
+      if (usingBackend) await apiWrite("delete", { id });
       else { STATE.expenses = STATE.expenses.filter((x) => x.id !== id); persistLocal(); }
       if (STATE.editingId === id) exitEditMode();
       await reload();
@@ -273,12 +288,12 @@
       const sharers = C.people.filter((_, i) => (x.shares[i] || 0) > 0).map((p) => p.name);
       const tr = el("tr");
       tr.innerHTML =
-        `<td class="ex-date">${x.date ? prettyDate(x.date) : '<span class="muted">—</span>'}</td>` +
-        `<td><div class="ex-desc">${escapeHtml(x.desc)}</div><div class="ex-sub"><span class="cat-dot cat-${slug(x.category)}"></span>${escapeHtml(x.category)}</div></td>` +
-        `<td class="num">${x.currency !== baseSym ? `<span class="muted">${escapeHtml(x.currency)}${x.amount.toLocaleString()}</span><br>` : ""}${fmtBase(x.amountEur)}</td>` +
-        `<td>${escapeHtml(x.paidBy)}</td>` +
-        `<td class="ex-shares">${sharers.length === C.people.length ? "Everyone" : escapeHtml(sharers.join(", "))}</td>` +
-        `<td class="right nowrap"><button class="icon-btn edit" title="Edit" data-id="${x.id}">✏️</button><button class="icon-btn del" title="Remove" data-id="${x.id}">✕</button></td>`;
+        `<td class="ex-date">${x.date ? esc(prettyDate(x.date)) : '<span class="muted">—</span>'}</td>` +
+        `<td><div class="ex-desc">${esc(x.desc)}</div><div class="ex-sub"><span class="cat-dot cat-${slug(x.category)}"></span>${esc(x.category)}</div></td>` +
+        `<td class="num">${x.currency !== baseSym ? `<span class="muted">${esc(x.currency)}${esc(x.amount.toLocaleString())}</span><br>` : ""}${fmtBase(x.amountEur)}</td>` +
+        `<td>${esc(x.paidBy)}</td>` +
+        `<td class="ex-shares">${sharers.length === C.people.length ? "Everyone" : esc(sharers.join(", "))}</td>` +
+        `<td class="right nowrap"><button class="icon-btn edit" title="Edit" data-id="${esc(x.id)}">✏️</button><button class="icon-btn del" title="Remove" data-id="${esc(x.id)}">✕</button></td>`;
       tbody.appendChild(tr);
     });
     $("#expTotal").innerHTML = `${STATE.expenses.length} expense${STATE.expenses.length > 1 ? "s" : ""} · pool total <strong>${fmtBase(total)}</strong> · ${fmtInr(total)}`;
@@ -323,7 +338,8 @@
       const g = Math.min(cr[ci].a, db[di].a);
       tx.push({ from: db[di].k, to: cr[ci].k, amt: g });
       cr[ci].a -= g; db[di].a -= g;
-      if (cr[ci].a < 0.01) ci++; if (db[di].a < 0.01) di++;
+      if (cr[ci].a < 0.01) ci++;
+      if (db[di].a < 0.01) di++;
     }
     return tx;
   }
@@ -332,7 +348,7 @@
     const rows = perPerson();
     const units = byUnit(rows);
 
-    // ---- person table ----
+    // ---- person table ----  (settleRow escapes its text arguments)
     const pBody = $("#settlePersonBody");
     pBody.innerHTML = "";
     rows.forEach((r) => pBody.appendChild(settleRow(r.name, r.group, r.paid, r.owed, r.net)));
@@ -341,8 +357,8 @@
     const cBody = $("#settleCoupleBody");
     cBody.innerHTML = "";
     units.forEach((u) => {
-      const label = u.members.length > 1 ? `${escapeHtml(u.members.join(" & "))}` : escapeHtml(u.members[0]);
-      const sub = `${u.group} · settle via ${escapeHtml(u.spoc)}`;
+      const label = u.members.length > 1 ? u.members.join(" & ") : u.members[0];
+      const sub = `${u.group} · settle via ${u.spoc}`;
       cBody.appendChild(settleRow(label, sub, u.paid, u.owed, u.net));
     });
 
@@ -356,7 +372,7 @@
     if (!tx.length) list.innerHTML = `<div class="muted center">Everyone's square — nothing to settle yet.</div>`;
     else tx.forEach((t) => {
       const row = el("div", "transfer");
-      row.innerHTML = `<span class="t-from">${escapeHtml(t.from)}</span><span class="t-arrow">→</span><span class="t-to">${escapeHtml(t.to)}</span><span class="t-amt">${fmtBase(t.amt)} <em>${fmtInr(t.amt)}</em></span>`;
+      row.innerHTML = `<span class="t-from">${esc(t.from)}</span><span class="t-arrow">→</span><span class="t-to">${esc(t.to)}</span><span class="t-amt">${fmtBase(t.amt)} <em>${fmtInr(t.amt)}</em></span>`;
       list.appendChild(row);
     });
 
@@ -365,16 +381,17 @@
     applySettleView();
   }
 
+  // name and sub are plain text — escaped here.
   function settleRow(name, sub, paid, owed, net) {
     const cls = net > 0.01 ? "pos" : net < -0.01 ? "neg" : "";
     const status = net > 0.01 ? `is owed ${fmtBase(net)}` : net < -0.01 ? `owes ${fmtBase(-net)}` : "settled up";
     const tr = el("tr");
     tr.innerHTML =
-      `<td><strong>${name}</strong><div class="ex-sub">${sub}</div></td>` +
+      `<td><strong>${esc(name)}</strong><div class="ex-sub">${esc(sub)}</div></td>` +
       `<td class="num">${fmtBase(paid)}</td>` +
       `<td class="num">${fmtBase(owed)}</td>` +
       `<td class="num ${cls}"><strong>${net >= 0 ? "+" : ""}${fmtBase(net)}</strong><div class="ex-sub">${fmtInr(Math.abs(net))}</div></td>` +
-      `<td class="${cls}">${status}</td>`;
+      `<td class="${cls}">${esc(status)}</td>`;
     return tr;
   }
 
@@ -421,16 +438,20 @@
       status: "",
     };
     if (!item.task) { toast("Add a task."); return; }
+    if (item.deadline && !/^\d{4}-\d{2}-\d{2}$/.test(item.deadline)) {
+      toast("Deadline must be a date (YYYY-MM-DD).");
+      return;
+    }
     setBusyEl("#actionForm", true);
     try {
       if (STATE.editingActionId != null) {
         const cur = STATE.actions.find((a) => a.id === STATE.editingActionId);
         item.status = cur ? cur.status : "";  // keep done/pending as-is when editing text
-        if (usingBackend) await api("updateAction", { id: STATE.editingActionId, item });
-        else { Object.assign(cur, item, { done: item.status.toLowerCase() === "done" }); persistActions(); }
+        if (usingBackend) await apiWrite("updateAction", { id: STATE.editingActionId, item });
+        else if (cur) { Object.assign(cur, item, { done: item.status.toLowerCase() === "done" }); persistActions(); }
         toast("Action updated ✓");
       } else {
-        if (usingBackend) await api("addAction", { item });
+        if (usingBackend) await apiWrite("addAction", { item });
         else { STATE.actions.push({ ...item, id: genId(), done: false }); persistActions(); }
         toast("Action added ✓");
       }
@@ -465,7 +486,7 @@
     const status = a.done ? "" : "Done";
     setBusyEl("#actionForm", true);
     try {
-      if (usingBackend) await api("updateAction", { id: a.id, item: { status } });
+      if (usingBackend) await apiWrite("updateAction", { id: a.id, item: { status } });
       else { a.status = status; a.done = !a.done; persistActions(); }
       await reload();
     } catch (err) { toast("Couldn't update: " + err.message); }
@@ -476,7 +497,7 @@
     if (!confirm("Remove this action item?")) return;
     setBusyEl("#actionForm", true);
     try {
-      if (usingBackend) await api("deleteAction", { id });
+      if (usingBackend) await apiWrite("deleteAction", { id });
       else { STATE.actions = STATE.actions.filter((a) => a.id !== id); persistActions(); }
       if (STATE.editingActionId === id) exitActionEdit();
       await reload();
@@ -514,15 +535,16 @@
       const openN = items.filter((a) => !a.done).length;
       const block = el("div", "owner-block");
       block.appendChild(el("div", "owner-head",
-        `<span class="owner-name">${escapeHtml(owner)}</span>` +
+        `<span class="owner-name">${esc(owner)}</span>` +
         `<span class="owner-count">${openN ? openN + " open" : "all done ✓"}</span>`));
       items.forEach((a) => {
+        const id = esc(a.id);
         const item = el("div", "action-item" + (a.done ? " done" : ""));
         item.innerHTML =
-          `<button class="check ${a.done ? "on" : ""}" title="${a.done ? "Mark not done" : "Mark done"}" data-id="${a.id}">${a.done ? "✓" : ""}</button>` +
-          `<div class="action-main"><div class="action-task">${escapeHtml(a.task)}</div>` +
-          `${a.deadline ? `<div class="action-due">🗓️ ${escapeHtml(prettyDeadline(a.deadline))}</div>` : ""}</div>` +
-          `<div class="action-btns nowrap"><button class="icon-btn edit" title="Edit" data-id="${a.id}">✏️</button><button class="icon-btn del" title="Remove" data-id="${a.id}">✕</button></div>`;
+          `<button class="check ${a.done ? "on" : ""}" title="${a.done ? "Mark not done" : "Mark done"}" data-id="${id}">${a.done ? "✓" : ""}</button>` +
+          `<div class="action-main"><div class="action-task">${esc(a.task)}</div>` +
+          `${a.deadline ? `<div class="action-due">🗓️ ${esc(prettyDeadline(a.deadline))}</div>` : ""}</div>` +
+          `<div class="action-btns nowrap"><button class="icon-btn edit" title="Edit" data-id="${id}">✏️</button><button class="icon-btn del" title="Remove" data-id="${id}">✕</button></div>`;
         block.appendChild(item);
       });
       wrap.appendChild(block);
@@ -539,9 +561,9 @@
   async function loadActions() {
     if (usingBackend) {
       try {
-        const data = await getJson("action=actions");
+        const data = await apiRead("actions");
         STATE.actions = (data.actions || []).map(normalizeAction);
-        persistActions();   // cache, same reason as the expenses above
+        persistActions();   // cache, same reason as the expenses
       } catch (err) {
         STATE.actions = loadActionsLocal();
       }
@@ -556,61 +578,110 @@
   function normalizeAction(a) {
     return { id: String(a.id), task: a.task || "", owner: a.owner || "", deadline: a.deadline || "", status: a.status || "", done: !!a.done || (a.status || "").toLowerCase() === "done" };
   }
-  const LS_ACT = "trip_actions_" + (C.trip.name || "trip").replace(/\W+/g, "_");
+  const LS_ACT = "trip_actions_" + TRIP_SLUG;
   function persistActions() { try { localStorage.setItem(LS_ACT, JSON.stringify(STATE.actions)); } catch {} }
   function loadActionsLocal() { try { return JSON.parse(localStorage.getItem(LS_ACT) || "[]").map(normalizeAction); } catch { return []; } }
 
   // ===========================================================================
-  //  BACKEND
+  //  PASSCODE
   // ===========================================================================
-  // Writes use a "simple" no-cors POST: Apps Script commits the change, and we
-  // then re-read via GET. (Reading a cross-origin POST response from Apps Script
-  // is unreliable; this pattern avoids that entirely.)
-  async function api(action, payload) {
-    await fetch(C.backend.webAppUrl, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, ...payload }),
-    });
-    return { ok: true };
+  let tripKey = null;
+  try { tripKey = localStorage.getItem(LS_PASS); } catch {}
+
+  class AuthCancelled extends Error {}
+
+  function getTripKey() {
+    if (tripKey) return tripKey;
+    const entered = prompt("Enter the trip passcode");
+    if (!entered || !entered.trim()) throw new AuthCancelled("passcode needed — refresh to enter it");
+    tripKey = entered.trim();
+    try { localStorage.setItem(LS_PASS, tripKey); } catch {}
+    return tripKey;
   }
 
-  async function reload() { await Promise.allSettled([loadExpenses(), loadActions()]); renderAllDynamic(); }
-  const bust = (url, q) => url + (url.includes("?") ? "&" : "?") + q + "&_=" + Date.now();
+  // Forget the passcode only if it's the one that just failed, so two
+  // parallel requests don't both re-prompt.
+  function forgetKey(badKey) {
+    if (tripKey !== badKey) return;
+    tripKey = null;
+    try { localStorage.removeItem(LS_PASS); } catch {}
+  }
+
+  // Lets anyone switch passcodes from the browser console: tripLogout()
+  window.tripLogout = () => { forgetKey(tripKey); toast("Passcode cleared — refresh to enter it again."); };
+
+  // ===========================================================================
+  //  BACKEND
+  // ===========================================================================
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const REQUEST_TIMEOUT_MS = 20000;
+  const READ_TRIES = 4;        // reads retry with backoff (Apps Script can be flaky)
+  const MAX_AUTH_PROMPTS = 2;  // wrong passcode → ask again this many times
 
-  // Apps Script deployments intermittently answer 404/503 or hang for tens of
-  // seconds. A single bad response used to blank the whole board, so reads now
-  // retry with backoff and only give up once every attempt has failed.
-  const READ_TRIES = 4;
-  const READ_TIMEOUT_MS = 20000;
+  class ServerError extends Error {}   // a real answer from the script: don't retry
 
-  async function getJson(query) {
-    let lastErr;
-    for (let attempt = 0; attempt < READ_TRIES; attempt++) {
-      if (attempt) await sleep(600 * Math.pow(2, attempt - 1));   // 0.6s, 1.2s, 2.4s
+  // One POST to the Apps Script. Handles the passcode; throws on any failure.
+  async function post(action, payload) {
+    for (let authTry = 0; ; authTry++) {
+      const key = getTripKey();
       const ctl = new AbortController();
-      const timer = setTimeout(() => ctl.abort(), READ_TIMEOUT_MS);
+      const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
+      let data;
       try {
-        const res = await fetch(bust(C.backend.webAppUrl, query), { cache: "no-store", signal: ctl.signal });
+        const res = await fetch(C.backend.webAppUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },  // "simple" request: no CORS preflight
+          body: JSON.stringify({ ...payload, action, key }),
+          cache: "no-store",
+          redirect: "follow",
+          signal: ctl.signal,
+        });
         if (!res.ok) throw new Error("HTTP " + res.status);
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || query + " failed");
-        return data;
+        data = await res.json();
       } catch (err) {
-        lastErr = (err && err.name === "AbortError") ? new Error("timed out") : err;
+        throw (err && err.name === "AbortError") ? new Error("timed out") : err;
       } finally {
         clearTimeout(timer);
       }
+
+      if (data && data.ok === false && data.error === "unauthorised") {
+        forgetKey(key);
+        if (authTry + 1 >= MAX_AUTH_PROMPTS) throw new ServerError("wrong passcode");
+        toast("Wrong passcode — try again.");
+        continue;
+      }
+      if (!data || data.ok === false) throw new ServerError((data && data.error) || action + " failed");
+      return data;
     }
-    throw lastErr || new Error(query + " failed");
   }
+
+  // Reads: safe to retry on network hiccups.
+  async function apiRead(action, payload = {}) {
+    let lastErr;
+    for (let attempt = 0; attempt < READ_TRIES; attempt++) {
+      if (attempt) await sleep(600 * Math.pow(2, attempt - 1));   // 0.6s, 1.2s, 2.4s
+      try {
+        return await post(action, payload);
+      } catch (err) {
+        if (err instanceof ServerError || err instanceof AuthCancelled) throw err;
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error(action + " failed");
+  }
+
+  // Writes: sent once (a retry could add the same expense twice).
+  // The server's answer is read, so errors like "Unknown payer" reach the user.
+  async function apiWrite(action, payload) {
+    return post(action, payload);
+  }
+
+  async function reload() { await Promise.allSettled([loadExpenses(), loadActions()]); renderAllDynamic(); }
 
   async function loadExpenses() {
     if (usingBackend) {
       try {
-        const data = await getJson("action=list");
+        const data = await apiRead("list");
         if (data.rates) { STATE.gbpEur = data.rates.gbpEur || STATE.gbpEur; STATE.eurInr = data.rates.eurInr || STATE.eurInr; }
         if (Array.isArray(data.itinerary) && data.itinerary.length) STATE.itinerary = data.itinerary;
         STATE.expenses = (data.expenses || []).map(normalize);
@@ -619,8 +690,8 @@
         const cached = loadLocal();
         STATE.expenses = cached;
         toast(cached.length
-          ? "Couldn't reach the sheet — showing the last saved copy. Refresh to retry."
-          : "Couldn't reach the sheet and nothing is cached yet. (" + err.message + ")");
+          ? "Couldn't reach the sheet (" + err.message + ") — showing the last saved copy."
+          : "Couldn't reach the sheet: " + err.message);
       }
     } else {
       STATE.expenses = loadLocal();
@@ -663,9 +734,9 @@
   const genId = () => "x" + Math.abs(hashStr(String(performance.now()) + ":" + STATE.expenses.length)).toString(36);
   function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
 
-  const LS_TAB = "trip_tab_" + (C.trip.name || "trip").replace(/\W+/g, "_");
+  const LS_TAB = "trip_tab_" + TRIP_SLUG;
   function activateTab(id, scroll) {
-    const btn = document.querySelector(`.tab-btn[data-tab="${id}"]`);
+    const btn = document.querySelector(`.tab-btn[data-tab="${CSS.escape(id)}"]`);
     const panel = document.getElementById(id);
     if (!btn || !panel) return;
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
@@ -693,7 +764,10 @@
     buildForm();
     buildActionForm();
     initTabs();
-    await Promise.all([loadExpenses(), loadActions()]);
+    // Load sequentially the first time so a new visitor is asked for the
+    // passcode once, not twice.
+    await loadExpenses();
+    await loadActions();
     renderAllDynamic();
   });
 })();
